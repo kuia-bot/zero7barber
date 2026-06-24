@@ -36,7 +36,7 @@ function dbListen(path, cb) {
 // ─── Configuração ─────────────────────────────────────────────
 const HORA_ABERTURA = 8;
 const HORA_FECHAMENTO = 17;
-const DURACAO_MIN = 30;
+const DURACAO_MIN = 60;
 const SENHA_PADRAO = "zero7";
 const DIAS_AGENDA = 30;
 
