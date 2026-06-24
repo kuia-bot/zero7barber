@@ -42,7 +42,6 @@ const DIAS_AGENDA = 30;
 
 const SERVICOS = [
   { id: "sobrancelha", nome: "Sobrancelha" },
-  { id: "barba", nome: "Barba / Bigode" },
 ];
 
 function calcularPreco(extras) { return extras.length === 0 ? 25 : 35; }
