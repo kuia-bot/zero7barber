@@ -1,16 +1,48 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Scissors, Calendar, Lock, X, Check, Plus, Minus, Eye, EyeOff, Phone, User, Clock, AlertCircle, LogOut, Settings } from "lucide-react";
+import { initializeApp } from "firebase/app";
+import { getDatabase, ref, set, get, onValue, off } from "firebase/database";
+import { Scissors, Calendar, Lock, X, Check, Plus, Eye, EyeOff, Phone, User, Clock, AlertCircle, LogOut } from "lucide-react";
 
-// ─── Configuração ────────────────────────────────────────────
-const HORA_ABERTURA  = 8;
+// ─── Firebase config ─────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSy8j4TnInnENiUaW8gEwtYDtzQaxKGPTSxE",
+  authDomain: "zero7barber.firebaseapp.com",
+  databaseURL: "https://zero7barber-default-rtdb.firebaseio.com",
+  projectId: "zero7barber",
+  storageBucket: "zero7barber.firebasestorage.app",
+  messagingSenderId: "526208231564",
+  appId: "1:526208231564:web:873c1ba05eb871c86db3a9"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getDatabase(firebaseApp);
+
+// ─── DB helpers ───────────────────────────────────────────────
+async function dbGet(path) {
+  try {
+    const snap = await get(ref(db, path));
+    return snap.exists() ? snap.val() : null;
+  } catch { return null; }
+}
+async function dbSet(path, value) {
+  try { await set(ref(db, path), value); } catch (e) { console.error(e); }
+}
+function dbListen(path, cb) {
+  const r = ref(db, path);
+  onValue(r, snap => cb(snap.exists() ? snap.val() : null));
+  return () => off(r);
+}
+
+// ─── Configuração ─────────────────────────────────────────────
+const HORA_ABERTURA = 8;
 const HORA_FECHAMENTO = 17;
-const DURACAO_MIN    = 30;
-const SENHA_PADRAO   = "zero7";
-const DIAS_AGENDA    = 30;
+const DURACAO_MIN = 30;
+const SENHA_PADRAO = "zero7";
+const DIAS_AGENDA = 30;
 
 const SERVICOS = [
   { id: "sobrancelha", nome: "Sobrancelha" },
-  { id: "barba",       nome: "Barba / Bigode" },
+  { id: "barba", nome: "Barba / Bigode" },
 ];
 
 function calcularPreco(extras) { return extras.length === 0 ? 25 : 35; }
@@ -27,23 +59,11 @@ function gerarSlotsPadrao() {
 }
 const SLOTS_PADRAO = gerarSlotsPadrao();
 
-function fmtISO(d)  { return d.toISOString().slice(0,10); }
+function fmtISO(d) { return d.toISOString().slice(0,10); }
 function fmtBR(iso) { const [,m,d] = iso.split("-"); return `${d}/${m}`; }
 function nomeDia(d) { return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]; }
 function diaFechado(d) { return d.getDay() === 0; }
 
-// ─── Storage helpers ─────────────────────────────────────────
-async function storageGet(key, _shared) {
-  try {
-    const v = localStorage.getItem(key); return v ? JSON.parse(v) : null;
-
-  } catch { return null; }
-}
-async function storageSet(key, _shared, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
-
-// ─── Som de notificação ──────────────────────────────────────
 function tocarBip() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -60,7 +80,6 @@ function tocarBip() {
   } catch {}
 }
 
-// ─── CSS global ──────────────────────────────────────────────
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap');
 *{box-sizing:border-box;}body{margin:0;}
@@ -73,9 +92,6 @@ const CSS = `
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
 `;
 
-// ═══════════════════════════════════════════════════════════════
-// APP ROOT
-// ═══════════════════════════════════════════════════════════════
 export default function App() {
   const [tela, setTela] = useState("cliente");
   return (
@@ -93,30 +109,30 @@ export default function App() {
 // ═══════════════════════════════════════════════════════════════
 function TelaCliente({ irLogin }) {
   const hoje = new Date();
-  const [dataSel, setDataSel]   = useState(fmtISO(hoje));
-  const [extras,  setExtras]    = useState([]);
-  const [horaSel, setHoraSel]   = useState(null);
-  const [nome,    setNome]      = useState("");
-  const [fone,    setFone]      = useState("");
-  const [loading, setLoading]   = useState(true);
-  const [enviando,setEnviando]  = useState(false);
-  const [confirmado,setConf]    = useState(null);
-  const [erro,    setErro]      = useState("");
-  const [agends,  setAgends]    = useState([]);
-  const [ovr,     setOvr]       = useState({bloqueados:[],slotsExtras:[]});
+  const [dataSel, setDataSel] = useState(fmtISO(hoje));
+  const [extras,  setExtras]  = useState([]);
+  const [horaSel, setHoraSel] = useState(null);
+  const [nome,    setNome]    = useState("");
+  const [fone,    setFone]    = useState("");
+  const [loading, setLoading] = useState(true);
+  const [enviando,setEnviando]= useState(false);
+  const [confirmado,setConf]  = useState(null);
+  const [erro,    setErro]    = useState("");
+  const [agends,  setAgends]  = useState({});
+  const [ovr,     setOvr]     = useState({bloqueados:[],slotsExtras:[]});
 
-  const carregarDia = useCallback(async (iso) => {
+  useEffect(() => {
     setLoading(true);
-    const [ag, ov] = await Promise.all([
-      storageGet(`agend:${iso}`, true),
-      storageGet(`ovr:${iso}`,   true),
-    ]);
-    setAgends(ag || []);
-    setOvr(ov || {bloqueados:[],slotsExtras:[]});
-    setLoading(false);
-  }, []);
-
-  useEffect(()=>{ carregarDia(dataSel); setHoraSel(null); },[dataSel,carregarDia]);
+    const unsub1 = dbListen(`agend/${dataSel}`, val => {
+      setAgends(val || {});
+      setLoading(false);
+    });
+    const unsub2 = dbListen(`ovr/${dataSel}`, val => {
+      setOvr(val || {bloqueados:[],slotsExtras:[]});
+    });
+    setHoraSel(null);
+    return () => { unsub1(); unsub2(); };
+  }, [dataSel]);
 
   function proximosDias() {
     const dias=[], cur=new Date(hoje); cur.setHours(0,0,0,0);
@@ -133,7 +149,7 @@ function TelaCliente({ irLogin }) {
     const minAgora = agora.getHours()*60 + agora.getMinutes();
     const base = Array.from(new Set([...SLOTS_PADRAO,...(ovr.slotsExtras||[])])).sort();
     const bloq  = new Set(ovr.bloqueados||[]);
-    const ocup  = new Set(agends.map(a=>a.hora));
+    const ocup  = new Set(Object.values(agends).map(a=>a.hora));
     return base.map(h => {
       const [hh,mm] = h.split(":").map(Number);
       const passou = dataSel===hojeISO && (hh*60+mm) <= minAgora;
@@ -147,24 +163,23 @@ function TelaCliente({ irLogin }) {
     if(!fone.trim())  { setErro("Digite seu telefone."); return; }
     if(!horaSel)      { setErro("Escolha um horário."); return; }
     setEnviando(true);
-    const atual = await storageGet(`agend:${dataSel}`, true) || [];
-    if(atual.some(a=>a.hora===horaSel)) {
+    // verifica conflito em tempo real
+    const atual = await dbGet(`agend/${dataSel}`);
+    const ocupados = atual ? Object.values(atual).map(a=>a.hora) : [];
+    if(ocupados.includes(horaSel)) {
       setErro("Esse horário acabou de ser ocupado. Escolha outro.");
-      setAgends(atual); setHoraSel(null); setEnviando(false); return;
+      setHoraSel(null); setEnviando(false); return;
     }
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
     const novo = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`,
-      nome:nome.trim(), fone:fone.trim(),
+      id, nome:nome.trim(), fone:fone.trim(),
       hora:horaSel, data:dataSel,
-      extras, preco:calcularPreco(extras),
-      ts:Date.now(),
+      extras, preco:calcularPreco(extras), ts:Date.now(),
     };
-    const lista = [...atual, novo];
-    await storageSet(`agend:${dataSel}`, true, lista);
-    // fila de notificação
-    const fila = await storageGet("notif-fila", true) || [];
-    await storageSet("notif-fila", true, [...fila, novo]);
-    setAgends(lista); setConf(novo); setEnviando(false);
+    await dbSet(`agend/${dataSel}/${id}`, novo);
+    // notificação pro barbeiro
+    await dbSet(`notif/${id}`, { ...novo, lido: false });
+    setConf(novo); setEnviando(false);
   }
 
   function resetar() { setConf(null); setExtras([]); setHoraSel(null); setNome(""); setFone(""); }
@@ -174,16 +189,12 @@ function TelaCliente({ irLogin }) {
 
   return (
     <div style={{maxWidth:640,margin:"0 auto",paddingBottom:60}}>
-      {/* Header */}
       <header style={{
-        position:"relative", padding:"36px 24px 28px",
+        position:"relative",padding:"36px 24px 28px",
         background:"linear-gradient(135deg,#1c1d20 0%,#16171A 55%,#1a1611 100%)",
-        borderBottom:"3px solid #B5512C", overflow:"hidden",
+        borderBottom:"3px solid #B5512C",overflow:"hidden",
       }}>
-        <div style={{
-          position:"absolute",inset:0,pointerEvents:"none",
-          backgroundImage:"repeating-linear-gradient(135deg,rgba(255,255,255,.022) 0px,rgba(255,255,255,.022) 1px,transparent 1px,transparent 14px)",
-        }}/>
+        <div style={{position:"absolute",inset:0,pointerEvents:"none",backgroundImage:"repeating-linear-gradient(135deg,rgba(255,255,255,.022) 0px,rgba(255,255,255,.022) 1px,transparent 1px,transparent 14px)"}}/>
         <div style={{position:"relative",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <h1 className="fd" style={{color:"#EDEAE3",fontSize:42,fontWeight:700,letterSpacing:1,lineHeight:1,margin:0,textTransform:"uppercase"}}>
             Zero<span style={{color:"#B5512C"}}>7</span>Barber
@@ -193,10 +204,7 @@ function TelaCliente({ irLogin }) {
       </header>
 
       <div style={{padding:"22px 18px 0"}}>
-        {confirmado ? (
-          <Confirmacao ag={confirmado} onNovo={resetar}/>
-        ) : (<>
-          {/* Serviços */}
+        {confirmado ? <Confirmacao ag={confirmado} onNovo={resetar}/> : (<>
           <Secao titulo="Serviço" ic={<Scissors size={15} color="#B5512C"/>}>
             <div className="corner" style={{background:"#1f2023",border:"1px solid #2c2d31",padding:18}}>
               <LinhaServico nome="Corte de cabelo" sub="Sempre incluso" fixo/>
@@ -213,11 +221,10 @@ function TelaCliente({ irLogin }) {
             </div>
           </Secao>
 
-          {/* Dias */}
           <Secao titulo="Dia" ic={<Calendar size={15} color="#B5512C"/>}>
             <div className="scroll-x" style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6}}>
               {proximosDias().map(d=>{
-                const iso=fmtISO(d), ativo=iso===dataSel;
+                const iso=fmtISO(d),ativo=iso===dataSel;
                 return (
                   <button key={iso} onClick={()=>setDataSel(iso)} className="fb"
                     style={{flexShrink:0,minWidth:60,padding:"9px 5px",borderRadius:8,textAlign:"center",cursor:"pointer",
@@ -232,7 +239,6 @@ function TelaCliente({ irLogin }) {
             </div>
           </Secao>
 
-          {/* Horários */}
           <Secao titulo="Horário" ic={<Clock size={15} color="#B5512C"/>}>
             {loading ? (
               <p className="fb" style={{color:"#5b5d62",fontSize:13,margin:0}}>Carregando horários…</p>
@@ -260,7 +266,6 @@ function TelaCliente({ irLogin }) {
             )}
           </Secao>
 
-          {/* Dados */}
           <Secao titulo="Seus dados" ic={<User size={15} color="#B5512C"/>}>
             <div style={{display:"flex",flexDirection:"column",gap:9}}>
               <Campo placeholder="Seu nome" val={nome} set={setNome} ic={<User size={14} color="#5b5d62"/>}/>
@@ -276,7 +281,7 @@ function TelaCliente({ irLogin }) {
 
           <button onClick={agendar} disabled={enviando} className="fd"
             style={{marginTop:18,width:"100%",padding:"15px",background:enviando?"#5b3b27":"#B5512C",color:"#EDEAE3",border:"none",borderRadius:8,fontSize:17,fontWeight:600,letterSpacing:.5,textTransform:"uppercase",cursor:enviando?"default":"pointer"}}>
-            {enviando ? "Agendando…" : "Agendar horário"}
+            {enviando?"Agendando…":"Agendar horário"}
           </button>
         </>)}
       </div>
@@ -354,24 +359,20 @@ function Confirmacao({ag,onNovo}) {
 // TELA LOGIN
 // ═══════════════════════════════════════════════════════════════
 function TelaLogin({ onEntrar, onVoltar }) {
-  const [senha,    setSenha]    = useState("");
-  const [ver,      setVer]      = useState(false);
-  const [erro,     setErro]     = useState(false);
-  const [loading,  setLoading]  = useState(false);
+  const [senha,   setSenha]   = useState("");
+  const [ver,     setVer]     = useState(false);
+  const [erro,    setErro]    = useState(false);
+  const [loading, setLoading] = useState(false);
 
   async function entrar(e) {
     e.preventDefault();
     if(!senha.trim()) return;
     setLoading(true); setErro(false);
-    // Pega a senha salva; se nunca foi salva, usa a padrão
-    const salva = await storageGet("senha-barbeiro", false);
-    const senhaCorreta = salva !== null ? salva : SENHA_PADRAO;
+    const salva = await dbGet("config/senha");
+    const correta = salva !== null ? salva : SENHA_PADRAO;
     setLoading(false);
-    if (senha === senhaCorreta) {
-      onEntrar();
-    } else {
-      setErro(true);
-    }
+    if(senha === correta) onEntrar();
+    else setErro(true);
   }
 
   return (
@@ -390,7 +391,7 @@ function TelaLogin({ onEntrar, onVoltar }) {
             {ver?<EyeOff size={15} color="#5b5d62"/>:<Eye size={15} color="#5b5d62"/>}
           </button>
         </div>
-        {erro && <p className="fb" style={{color:"#c0594a",fontSize:12.5,marginTop:8}}>Senha incorreta. Tente novamente.</p>}
+        {erro && <p className="fb" style={{color:"#c0594a",fontSize:12.5,marginTop:8}}>Senha incorreta.</p>}
         <button type="submit" disabled={loading} className="fd"
           style={{marginTop:14,width:"100%",padding:"14px",background:"#B5512C",color:"#EDEAE3",border:"none",borderRadius:8,fontSize:15,fontWeight:600,letterSpacing:.5,textTransform:"uppercase",cursor:loading?"default":"pointer"}}>
           {loading?"Verificando…":"Entrar"}
@@ -409,108 +410,96 @@ function TelaLogin({ onEntrar, onVoltar }) {
 function TelaPainel({ onSair }) {
   const hoje = new Date();
   const [dataSel,  setDataSel]  = useState(fmtISO(hoje));
-  const [agends,   setAgends]   = useState([]);
+  const [agends,   setAgends]   = useState({});
   const [ovr,      setOvr]      = useState({bloqueados:[],slotsExtras:[]});
   const [loading,  setLoading]  = useState(true);
   const [modoEdit, setModoEdit] = useState(false);
   const [hrExtra,  setHrExtra]  = useState("");
   const [toasts,   setToasts]   = useState([]);
-  const filaRef = useRef(null);
+  const [abaAtiva, setAbaAtiva] = useState("agenda");
+  const [saAtual,  setSaAtual]  = useState("");
+  const [saNova,   setSaNova]   = useState("");
+  const [saConf,   setSaConf]   = useState("");
+  const [erroSenha,setErroSenha]= useState("");
+  const [okSenha,  setOkSenha]  = useState(false);
+  const [verSa,    setVerSa]    = useState(false);
+  const [verSn,    setVerSn]    = useState(false);
+  const notifContRef = useRef(null);
 
-  // Trocar senha
-  const [abaAtiva,  setAbaAtiva]  = useState("agenda"); // agenda | senha
-  const [saAtual,   setSaAtual]   = useState("");
-  const [saNova,    setSaNova]    = useState("");
-  const [saConf,    setSaConf]    = useState("");
-  const [erroSenha, setErroSenha] = useState("");
-  const [okSenha,   setOkSenha]   = useState(false);
-  const [verSa,     setVerSa]     = useState(false);
-  const [verSn,     setVerSn]     = useState(false);
-
-  const carregarDia = useCallback(async (iso) => {
+  // Escuta agendamentos e overrides do dia em tempo real
+  useEffect(() => {
     setLoading(true);
-    const [ag, ov] = await Promise.all([
-      storageGet(`agend:${iso}`, true),
-      storageGet(`ovr:${iso}`,   true),
-    ]);
-    const lista = (ag||[]).slice().sort((a,b)=>a.hora.localeCompare(b.hora));
-    setAgends(lista);
-    setOvr(ov || {bloqueados:[],slotsExtras:[]});
-    setLoading(false);
+    const u1 = dbListen(`agend/${dataSel}`, val => { setAgends(val||{}); setLoading(false); });
+    const u2 = dbListen(`ovr/${dataSel}`, val => { setOvr(val||{bloqueados:[],slotsExtras:[]}); });
+    return () => { u1(); u2(); };
+  }, [dataSel]);
+
+  // Escuta notificações em tempo real
+  useEffect(() => {
+    const unsub = dbListen("notif", val => {
+      if(!val) return;
+      const notifs = Object.values(val).filter(n=>!n.lido);
+      if(notifContRef.current === null) {
+        notifContRef.current = notifs.length;
+        return;
+      }
+      if(notifs.length > notifContRef.current) {
+        const novos = notifs.slice(notifContRef.current);
+        tocarBip();
+        novos.forEach(n => {
+          const id = `${Date.now()}-${Math.random()}`;
+          setToasts(p=>[...p,{id,n}]);
+          setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)), 7000);
+          // Marca como lido
+          dbSet(`notif/${n.id}/lido`, true);
+          // Notificação do navegador
+          if(window.Notification?.permission==="granted") {
+            new Notification("Zero7Barber — Novo agendamento", {
+              body:`${n.nome} marcou às ${n.hora} (${fmtBR(n.data)})`,
+            });
+          }
+        });
+      }
+      notifContRef.current = notifs.length;
+    });
+    if(window.Notification?.permission==="default") Notification.requestPermission();
+    return unsub;
   }, []);
 
-  useEffect(()=>{ carregarDia(dataSel); },[dataSel,carregarDia]);
-
-  // Polling para novos agendamentos
-  useEffect(()=>{
-    let ativo=true;
-    async function poll() {
-      const fila = await storageGet("notif-fila", true) || [];
-      if(!ativo) return;
-      if(filaRef.current===null) { filaRef.current=fila.length; return; }
-      if(fila.length > filaRef.current) {
-        const novos = fila.slice(filaRef.current);
-        tocarBip();
-        novos.forEach(n=>{
-          const id=`${Date.now()}-${Math.random()}`;
-          setToasts(p=>[...p,{id,n}]);
-          setTimeout(()=>setToasts(p=>p.filter(t=>t.id!==id)),7000);
-          if(n.data===dataSel) carregarDia(dataSel);
-        });
-        if(window.Notification?.permission==="granted") {
-          novos.forEach(n=>new Notification("Zero7Barber — Novo agendamento",{
-            body:`${n.nome} marcou às ${n.hora} (${fmtBR(n.data)})`,
-          }));
-        }
-      }
-      filaRef.current=fila.length;
-    }
-    if(window.Notification?.permission==="default") Notification.requestPermission();
-    poll();
-    const t=setInterval(poll,4000);
-    return()=>{ ativo=false; clearInterval(t); };
-  },[dataSel,carregarDia]);
-
   async function cancelar(id) {
-    const lista = agends.filter(a=>a.id!==id);
-    setAgends(lista);
-    await storageSet(`agend:${dataSel}`, true, lista);
+    await dbSet(`agend/${dataSel}/${id}`, null);
   }
 
   async function toggleBloqueio(hora) {
     const bl = new Set(ovr.bloqueados||[]);
     bl.has(hora) ? bl.delete(hora) : bl.add(hora);
     const novo = {...ovr, bloqueados:[...bl]};
-    setOvr(novo);
-    await storageSet(`ovr:${dataSel}`, true, novo);
+    await dbSet(`ovr/${dataSel}`, novo);
   }
 
   async function addExtra() {
     if(!hrExtra) return;
     const ex = new Set(ovr.slotsExtras||[]);
     ex.add(hrExtra);
-    const novo = {...ovr, slotsExtras:[...ex].sort()};
-    setOvr(novo); setHrExtra("");
-    await storageSet(`ovr:${dataSel}`, true, novo);
+    await dbSet(`ovr/${dataSel}`, {...ovr, slotsExtras:[...ex].sort()});
+    setHrExtra("");
   }
 
   async function remExtra(hora) {
     const ex = (ovr.slotsExtras||[]).filter(h=>h!==hora);
-    const novo = {...ovr, slotsExtras:ex};
-    setOvr(novo);
-    await storageSet(`ovr:${dataSel}`, true, novo);
+    await dbSet(`ovr/${dataSel}`, {...ovr, slotsExtras:ex});
   }
 
   async function trocarSenha() {
     setErroSenha(""); setOkSenha(false);
-    const salva = await storageGet("senha-barbeiro", false);
+    const salva = await dbGet("config/senha");
     const atual = salva !== null ? salva : SENHA_PADRAO;
     if(saAtual !== atual) { setErroSenha("Senha atual incorreta."); return; }
-    if(saNova.length < 4) { setErroSenha("A nova senha precisa ter pelo menos 4 caracteres."); return; }
-    if(saNova !== saConf)  { setErroSenha("As senhas novas não coincidem."); return; }
-    await storageSet("senha-barbeiro", false, saNova);
+    if(saNova.length < 4) { setErroSenha("Mínimo 4 caracteres."); return; }
+    if(saNova !== saConf)  { setErroSenha("As senhas não coincidem."); return; }
+    await dbSet("config/senha", saNova);
     setOkSenha(true); setSaAtual(""); setSaNova(""); setSaConf("");
-    setTimeout(()=>setOkSenha(false),3000);
+    setTimeout(()=>setOkSenha(false), 3000);
   }
 
   function proximosDias() {
@@ -519,16 +508,16 @@ function TelaPainel({ onSair }) {
     return dias;
   }
 
+  const agendsList = Object.values(agends).sort((a,b)=>a.hora.localeCompare(b.hora));
   const todosSlots = Array.from(new Set([...SLOTS_PADRAO,...(ovr.slotsExtras||[])])).sort();
-  const ocupados   = new Set(agends.map(a=>a.hora));
+  const ocupados   = new Set(agendsList.map(a=>a.hora));
   const bloqueados = new Set(ovr.bloqueados||[]);
   const extrasSet  = new Set((ovr.slotsExtras||[]).filter(h=>!SLOTS_PADRAO.includes(h)));
-  const receita    = agends.reduce((s,a)=>s+a.preco,0);
+  const receita    = agendsList.reduce((s,a)=>s+a.preco,0);
   const diaObj     = new Date(dataSel+"T00:00:00");
 
   return (
     <div style={{maxWidth:740,margin:"0 auto",paddingBottom:60}}>
-
       {/* Toasts */}
       <div style={{position:"fixed",top:14,right:14,zIndex:99,display:"flex",flexDirection:"column",gap:8}}>
         {toasts.map(({id,n})=>(
@@ -544,7 +533,6 @@ function TelaPainel({ onSair }) {
         ))}
       </div>
 
-      {/* Header */}
       <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"20px 22px",borderBottom:"1px solid #2c2d31"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <Scissors size={21} color="#B5512C"/>
@@ -558,7 +546,6 @@ function TelaPainel({ onSair }) {
         </button>
       </header>
 
-      {/* Abas */}
       <div style={{display:"flex",borderBottom:"1px solid #2c2d31",padding:"0 22px"}}>
         {[["agenda","Agenda"],["senha","Senha"]].map(([k,l])=>(
           <button key={k} onClick={()=>setAbaAtiva(k)} className="fd"
@@ -572,8 +559,6 @@ function TelaPainel({ onSair }) {
 
       <div style={{padding:"20px 20px 0"}}>
         {abaAtiva==="agenda" && (<>
-
-          {/* Seletor de dias */}
           <div className="scroll-x" style={{display:"flex",gap:7,overflowX:"auto",paddingBottom:12}}>
             {proximosDias().map(d=>{
               const iso=fmtISO(d),ativo=iso===dataSel;
@@ -590,9 +575,8 @@ function TelaPainel({ onSair }) {
             })}
           </div>
 
-          {/* Cards resumo */}
           <div style={{display:"flex",gap:10,marginBottom:20}}>
-            {[["Agendamentos",agends.length],["Faturamento previsto",`R$ ${receita}`],["Vagas livres",todosSlots.filter(h=>!ocupados.has(h)&&!bloqueados.has(h)).length]].map(([l,v])=>(
+            {[["Agendamentos",agendsList.length],["Faturamento",`R$ ${receita}`],["Vagas livres",todosSlots.filter(h=>!ocupados.has(h)&&!bloqueados.has(h)).length]].map(([l,v])=>(
               <div key={l} className="corner" style={{flex:1,background:"#1f2023",border:"1px solid #2c2d31",padding:"11px 13px"}}>
                 <div className="fb" style={{color:"#5b5d62",fontSize:10,textTransform:"uppercase",letterSpacing:.5}}>{l}</div>
                 <div className="fm" style={{color:"#EDEAE3",fontSize:20,fontWeight:600,marginTop:2}}>{v}</div>
@@ -600,26 +584,24 @@ function TelaPainel({ onSair }) {
             ))}
           </div>
 
-          {/* Lista de agendamentos */}
           <div className="fd" style={{color:"#9CA3A8",fontSize:12,letterSpacing:1.8,textTransform:"uppercase",marginBottom:10}}>
             {nomeDia(diaObj)}feira, {fmtBR(dataSel)}
           </div>
+
           {loading ? (
             <p className="fb" style={{color:"#5b5d62",fontSize:13}}>Carregando…</p>
-          ) : agends.length===0 ? (
+          ) : agendsList.length===0 ? (
             <div className="corner fb" style={{background:"#1f2023",border:"1px dashed #2c2d31",padding:22,textAlign:"center",color:"#5b5d62",fontSize:13,marginBottom:22}}>
               Nenhum agendamento nesse dia ainda.
             </div>
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:22}}>
-              {agends.map(a=>{
+              {agendsList.map(a=>{
                 const nex=a.extras.map(id=>SERVICOS.find(s=>s.id===id)?.nome).filter(Boolean);
                 return (
                   <div key={a.id} className="corner" style={{background:"#1f2023",border:"1px solid #2c2d31",padding:"13px 15px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
                     <div style={{display:"flex",alignItems:"center",gap:13}}>
-                      <div className="fm" style={{color:"#D9A441",fontSize:16,fontWeight:600,background:"rgba(217,164,65,.1)",borderRadius:6,padding:"5px 9px",minWidth:54,textAlign:"center"}}>
-                        {a.hora}
-                      </div>
+                      <div className="fm" style={{color:"#D9A441",fontSize:16,fontWeight:600,background:"rgba(217,164,65,.1)",borderRadius:6,padding:"5px 9px",minWidth:54,textAlign:"center"}}>{a.hora}</div>
                       <div>
                         <div className="fb" style={{color:"#EDEAE3",fontSize:14.5,fontWeight:600}}>{a.nome}</div>
                         <div className="fb" style={{color:"#5b5d62",fontSize:12}}>{nex.length?`Corte + ${nex.join(" + ")}`:"Corte de cabelo"} · R$ {a.preco}</div>
@@ -629,7 +611,7 @@ function TelaPainel({ onSair }) {
                         </a>
                       </div>
                     </div>
-                    <button onClick={()=>cancelar(a.id)} title="Cancelar" style={{background:"none",border:"none",cursor:"pointer",color:"#5b5d62",padding:5}}>
+                    <button onClick={()=>cancelar(a.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#5b5d62",padding:5}}>
                       <X size={16}/>
                     </button>
                   </div>
@@ -638,152 +620,89 @@ function TelaPainel({ onSair }) {
             </div>
           )}
 
-          {/* ── Gerenciar horários ── */}
+          {/* Gerenciar horários */}
           <div style={{background:"#1a1b1e",border:"1px solid #2c2d31",borderRadius:10,padding:18,marginBottom:24}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <span className="fd" style={{color:"#9CA3A8",fontSize:12,letterSpacing:1.8,textTransform:"uppercase"}}>
-                Horários do dia
-              </span>
+              <span className="fd" style={{color:"#9CA3A8",fontSize:12,letterSpacing:1.8,textTransform:"uppercase"}}>Horários do dia</span>
               <button onClick={()=>setModoEdit(v=>!v)} className="fb"
                 style={{background:"none",border:"1px solid #2c2d31",color:"#9CA3A8",borderRadius:6,padding:"4px 10px",fontSize:12,cursor:"pointer"}}>
-                {modoEdit?"Concluir edição":"Editar horários"}
+                {modoEdit?"Concluir":"Editar horários"}
               </button>
             </div>
-
-            {modoEdit && (
-              <p className="fb" style={{color:"#5b5d62",fontSize:12.5,marginBottom:12,marginTop:0}}>
-                Toque num horário para <span style={{color:"#c0594a"}}>bloquear</span> ou <span style={{color:"#5b8a6e"}}>liberar</span>. Horários com cliente não podem ser alterados.
-              </p>
-            )}
-
-            {/* Grade de todos os slots */}
+            {modoEdit && <p className="fb" style={{color:"#5b5d62",fontSize:12.5,marginBottom:12,marginTop:0}}>Toque num horário para bloquear ou liberar.</p>}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:14}}>
               {todosSlots.map(hora=>{
-                const ocup  = ocupados.has(hora);
-                const bloq  = bloqueados.has(hora);
-                const extra = extrasSet.has(hora);
+                const ocup=ocupados.has(hora),bloq=bloqueados.has(hora),extra=extrasSet.has(hora);
                 return (
-                  <button key={hora}
-                    disabled={!modoEdit||ocup}
-                    onClick={()=>toggleBloqueio(hora)}
-                    className="fm"
-                    title={ocup?"Com cliente marcado":bloq?"Bloqueado — clique pra liberar":"Clique pra bloquear"}
-                    style={{padding:"9px 4px",borderRadius:6,fontSize:12.5,fontWeight:600,
-                      cursor:modoEdit&&!ocup?"pointer":"default",
+                  <button key={hora} disabled={!modoEdit||ocup} onClick={()=>toggleBloqueio(hora)} className="fm"
+                    style={{padding:"9px 4px",borderRadius:6,fontSize:12.5,fontWeight:600,cursor:modoEdit&&!ocup?"pointer":"default",
                       textDecoration:bloq?"line-through":"none",
                       border:ocup?"1px solid #2c2d31":bloq?"1px solid #c0594a":extra?"1px solid #5b8a6e":"1px solid #2c2d31",
                       background:ocup?"rgba(217,164,65,.08)":bloq?"rgba(192,89,74,.12)":extra?"rgba(91,138,110,.1)":"#16171A",
                       color:ocup?"#D9A441":bloq?"#c0594a":extra?"#5b8a6e":"#9CA3A8"}}>
                     {hora}
-                    {ocup && <span style={{display:"block",fontSize:8,marginTop:1,color:"#D9A441"}}>● cliente</span>}
-                    {bloq && !ocup && <span style={{display:"block",fontSize:8,marginTop:1,color:"#c0594a"}}>bloqueado</span>}
-                    {extra && !bloq && !ocup && <span style={{display:"block",fontSize:8,marginTop:1,color:"#5b8a6e"}}>extra</span>}
+                    {ocup&&<span style={{display:"block",fontSize:8,marginTop:1,color:"#D9A441"}}>● cliente</span>}
+                    {bloq&&!ocup&&<span style={{display:"block",fontSize:8,marginTop:1,color:"#c0594a"}}>bloqueado</span>}
+                    {extra&&!bloq&&!ocup&&<span style={{display:"block",fontSize:8,marginTop:1,color:"#5b8a6e"}}>extra</span>}
                   </button>
                 );
               })}
             </div>
-
-            {/* Legenda */}
             <div style={{display:"flex",gap:12,flexWrap:"wrap",marginBottom:modoEdit?14:0}}>
-              {[["#D9A441","● com cliente"],["#c0594a","bloqueado"],["#5b8a6e","horário extra"],["#9CA3A8","livre"]].map(([c,l])=>(
+              {[["#D9A441","com cliente"],["#c0594a","bloqueado"],["#5b8a6e","extra"],["#9CA3A8","livre"]].map(([c,l])=>(
                 <span key={l} className="fb" style={{fontSize:11,color:c,display:"flex",alignItems:"center",gap:4}}>
                   <span style={{width:8,height:8,borderRadius:2,background:c,display:"inline-block"}}/>{l}
                 </span>
               ))}
             </div>
-
-            {/* Adicionar horário extra */}
             {modoEdit && (
               <div style={{borderTop:"1px dashed #2c2d31",paddingTop:14}}>
-                <div className="fb" style={{color:"#5b5d62",fontSize:12.5,marginBottom:9}}>
-                  Adicionar horário fora do padrão nesse dia (ex: 07:00, 18:00, 19:30):
-                </div>
+                <div className="fb" style={{color:"#5b5d62",fontSize:12.5,marginBottom:9}}>Adicionar horário fora do padrão:</div>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                  <input type="time" value={hrExtra} onChange={e=>setHrExtra(e.target.value)}
-                    className="fm" style={{background:"#16171A",border:"1px solid #2c2d31",borderRadius:6,color:"#EDEAE3",padding:"8px 10px",fontSize:13.5}}/>
+                  <input type="time" value={hrExtra} onChange={e=>setHrExtra(e.target.value)} className="fm"
+                    style={{background:"#16171A",border:"1px solid #2c2d31",borderRadius:6,color:"#EDEAE3",padding:"8px 10px",fontSize:13.5}}/>
                   <button onClick={addExtra} className="fb"
                     style={{display:"flex",alignItems:"center",gap:5,background:"#5b8a6e",border:"none",color:"#fff",borderRadius:6,padding:"8px 13px",fontSize:13,fontWeight:600,cursor:"pointer"}}>
-                    <Plus size={14}/> Adicionar horário
+                    <Plus size={14}/> Adicionar
                   </button>
                 </div>
-
-                {/* Lista de horários extras adicionados */}
                 {extrasSet.size > 0 && (
-                  <div style={{marginTop:12}}>
-                    <div className="fb" style={{color:"#5b5d62",fontSize:12,marginBottom:6}}>Horários extras adicionados nesse dia:</div>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                      {[...extrasSet].sort().map(h=>(
-                        <span key={h} className="fm" style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(91,138,110,.1)",border:"1px solid #5b8a6e",color:"#5b8a6e",borderRadius:6,padding:"4px 8px",fontSize:12}}>
-                          {h}
-                          {!ocupados.has(h) && (
-                            <button onClick={()=>remExtra(h)} style={{background:"none",border:"none",cursor:"pointer",color:"#5b8a6e",display:"flex",padding:0}}>
-                              <X size={11}/>
-                            </button>
-                          )}
-                        </span>
-                      ))}
-                    </div>
+                  <div style={{marginTop:12,display:"flex",flexWrap:"wrap",gap:6}}>
+                    {[...extrasSet].sort().map(h=>(
+                      <span key={h} className="fm" style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(91,138,110,.1)",border:"1px solid #5b8a6e",color:"#5b8a6e",borderRadius:6,padding:"4px 8px",fontSize:12}}>
+                        {h}
+                        {!ocupados.has(h)&&<button onClick={()=>remExtra(h)} style={{background:"none",border:"none",cursor:"pointer",color:"#5b8a6e",display:"flex",padding:0}}><X size={11}/></button>}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
             )}
           </div>
-
         </>)}
 
-        {/* ── Aba Senha ── */}
         {abaAtiva==="senha" && (
           <div style={{maxWidth:380}}>
-            <div className="fd" style={{color:"#9CA3A8",fontSize:12,letterSpacing:1.8,textTransform:"uppercase",marginBottom:16}}>Alterar senha de acesso</div>
+            <div className="fd" style={{color:"#9CA3A8",fontSize:12,letterSpacing:1.8,textTransform:"uppercase",marginBottom:16}}>Alterar senha</div>
             <div style={{display:"flex",flexDirection:"column",gap:9}}>
-              {/* Senha atual */}
-              <div style={{display:"flex",alignItems:"center",gap:10,background:"#1f2023",border:"1px solid #2c2d31",borderRadius:8,padding:"11px 13px"}}>
-                <Lock size={14} color="#5b5d62"/>
-                <input type={verSa?"text":"password"} value={saAtual} onChange={e=>setSaAtual(e.target.value)}
-                  placeholder="Senha atual" className="fb"
-                  style={{background:"none",border:"none",outline:"none",color:"#EDEAE3",fontSize:14,width:"100%"}}/>
-                <button type="button" onClick={()=>setVerSa(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",display:"flex"}}>
-                  {verSa?<EyeOff size={14} color="#5b5d62"/>:<Eye size={14} color="#5b5d62"/>}
-                </button>
-              </div>
-              {/* Nova senha */}
-              <div style={{display:"flex",alignItems:"center",gap:10,background:"#1f2023",border:"1px solid #2c2d31",borderRadius:8,padding:"11px 13px"}}>
-                <Lock size={14} color="#5b5d62"/>
-                <input type={verSn?"text":"password"} value={saNova} onChange={e=>setSaNova(e.target.value)}
-                  placeholder="Nova senha" className="fb"
-                  style={{background:"none",border:"none",outline:"none",color:"#EDEAE3",fontSize:14,width:"100%"}}/>
-                <button type="button" onClick={()=>setVerSn(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",display:"flex"}}>
-                  {verSn?<EyeOff size={14} color="#5b5d62"/>:<Eye size={14} color="#5b5d62"/>}
-                </button>
-              </div>
-              {/* Confirmar */}
-              <div style={{display:"flex",alignItems:"center",gap:10,background:"#1f2023",border:"1px solid #2c2d31",borderRadius:8,padding:"11px 13px"}}>
-                <Lock size={14} color="#5b5d62"/>
-                <input type="password" value={saConf} onChange={e=>setSaConf(e.target.value)}
-                  placeholder="Confirmar nova senha" className="fb"
-                  style={{background:"none",border:"none",outline:"none",color:"#EDEAE3",fontSize:14,width:"100%"}}/>
-              </div>
+              {[["Senha atual",saAtual,setSaAtual,verSa,setVerSa],["Nova senha",saNova,setSaNova,verSn,setVerSn],["Confirmar nova senha",saConf,setSaConf,false,null]].map(([ph,val,set,ver,setVer])=>(
+                <div key={ph} style={{display:"flex",alignItems:"center",gap:10,background:"#1f2023",border:"1px solid #2c2d31",borderRadius:8,padding:"11px 13px"}}>
+                  <Lock size={14} color="#5b5d62"/>
+                  <input type={ver?"text":"password"} value={val} onChange={e=>set(e.target.value)} placeholder={ph} className="fb"
+                    style={{background:"none",border:"none",outline:"none",color:"#EDEAE3",fontSize:14,width:"100%"}}/>
+                  {setVer && <button type="button" onClick={()=>setVer(v=>!v)} style={{background:"none",border:"none",cursor:"pointer",display:"flex"}}>
+                    {ver?<EyeOff size={14} color="#5b5d62"/>:<Eye size={14} color="#5b5d62"/>}
+                  </button>}
+                </div>
+              ))}
             </div>
-
-            {erroSenha && (
-              <div className="fb" style={{display:"flex",alignItems:"center",gap:7,color:"#c0594a",fontSize:12.5,marginTop:10}}>
-                <AlertCircle size={13}/> {erroSenha}
-              </div>
-            )}
-            {okSenha && (
-              <div className="fb" style={{display:"flex",alignItems:"center",gap:7,color:"#5b8a6e",fontSize:12.5,marginTop:10}}>
-                <Check size={13}/> Senha atualizada com sucesso!
-              </div>
-            )}
-
+            {erroSenha && <div className="fb" style={{display:"flex",alignItems:"center",gap:7,color:"#c0594a",fontSize:12.5,marginTop:10}}><AlertCircle size={13}/> {erroSenha}</div>}
+            {okSenha && <div className="fb" style={{display:"flex",alignItems:"center",gap:7,color:"#5b8a6e",fontSize:12.5,marginTop:10}}><Check size={13}/> Senha atualizada!</div>}
             <button onClick={trocarSenha} className="fd"
               style={{marginTop:14,width:"100%",padding:"13px",background:"#B5512C",color:"#EDEAE3",border:"none",borderRadius:8,fontSize:15,fontWeight:600,letterSpacing:.5,textTransform:"uppercase",cursor:"pointer"}}>
               Salvar nova senha
             </button>
-
-            <p className="fb" style={{color:"#5b5d62",fontSize:12,marginTop:14,lineHeight:1.6}}>
-              A senha padrão inicial é <span className="fm" style={{color:"#9CA3A8"}}>zero7</span>. Após trocar, use a nova senha para entrar.
-            </p>
+            <p className="fb" style={{color:"#5b5d62",fontSize:12,marginTop:14}}>Senha padrão: <span className="fm" style={{color:"#9CA3A8"}}>zero7</span></p>
           </div>
         )}
       </div>
