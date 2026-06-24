@@ -35,7 +35,7 @@ function dbListen(path, cb) {
 
 // ─── Configuração ─────────────────────────────────────────────
 const HORA_ABERTURA = 8;
-const HORA_FECHAMENTO = 17;
+const HORA_FECHAMENTO = 18;
 const DURACAO_MIN = 60;
 const SENHA_PADRAO = "zero7";
 const DIAS_AGENDA = 30;
@@ -59,6 +59,7 @@ function gerarSlotsPadrao() {
 }
 const SLOTS_PADRAO = gerarSlotsPadrao();
 
+const SLOTS_BLOQUEADOS_FIXOS = new Set(["12:00"]);
 function fmtISO(d) { return d.toISOString().slice(0,10); }
 function fmtBR(iso) { const [,m,d] = iso.split("-"); return `${d}/${m}`; }
 function nomeDia(d) { return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]; }
@@ -153,7 +154,7 @@ function TelaCliente({ irLogin }) {
     return base.map(h => {
       const [hh,mm] = h.split(":").map(Number);
       const passou = dataSel===hojeISO && (hh*60+mm) <= minAgora;
-      return { hora:h, disponivel:!bloq.has(h)&&!ocup.has(h)&&!passou };
+      return { hora:h, disponivel:!bloq.has(h)&&!ocup.has(h)&&!passou&&!SLOTS_BLOQUEADOS_FIXOS.has(h) };
     });
   }
 
