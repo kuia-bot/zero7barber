@@ -597,7 +597,7 @@ function TelaPainel({ onSair }) {
           ) : (
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:22}}>
               {agendsList.map(a=>{
-                const nex=a.extras.map(id=>SERVICOS.find(s=>s.id===id)?.nome).filter(Boolean);
+                const nex=(a.extras||[]).map(id=>SERVICOS.find(s=>s.id===id)?.nome).filter(Boolean);
                 return (
                   <div key={a.id} className="corner" style={{background:"#1f2023",border:"1px solid #2c2d31",padding:"13px 15px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
                     <div style={{display:"flex",alignItems:"center",gap:13}}>
