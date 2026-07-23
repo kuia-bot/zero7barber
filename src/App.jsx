@@ -176,9 +176,14 @@ function TelaCliente({ irLogin }) {
       hora:horaSel, data:dataSel,
       extras, preco:calcularPreco(extras), ts:Date.now(),
     };
-    await dbSet(`agend/${dataSel}/${id}`, novo);
-    // notificação pro barbeiro
-    await dbSet(`notif/${id}`, { ...novo, lido: false });
+    try {
+  await dbSet(`agend/${dataSel}/${id}`, novo);
+  await dbSet(`notif/${id}`, { ...novo, lido: false });
+  setConf(novo);
+} catch(e) {
+  setErro("Erro ao agendar. Verifique sua conexão e tente novamente.");
+}
+setEnviando(false);
     setConf(novo); setEnviando(false);
   }
 
