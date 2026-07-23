@@ -603,7 +603,7 @@ function TelaPainel({ onSair }) {
                     <div style={{display:"flex",alignItems:"center",gap:13}}>
                       <div className="fm" style={{color:"#D9A441",fontSize:16,fontWeight:600,background:"rgba(217,164,65,.1)",borderRadius:6,padding:"5px 9px",minWidth:54,textAlign:"center"}}>{a.hora}</div>
                       <div>
-                        <div className="fb" style={{color:"#EDEAE3",fontSize:14.5,fontWeight:600}}>{a.nome}</div>
+                        <div className="fb" style={{color:"#EDEAE3",fontSize:14.5,fontWeight:600}}>{a.nome || "Cliente"}</div>
                         <div className="fb" style={{color:"#5b5d62",fontSize:12}}>{nex.length?`Corte + ${nex.join(" + ")}`:"Corte de cabelo"} · R$ {a.preco}</div>
                         <a href={`https://wa.me/55${(a.fone||"").replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                           className="fb" style={{color:"#5b8a6e",fontSize:12,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,marginTop:2}}>
