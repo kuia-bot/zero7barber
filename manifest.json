@@ -1,0 +1,21 @@
+{
+  "name": "Zero7Barber",
+  "short_name": "Zero7Barber",
+  "description": "Sistema de agendamento Zero7Barber",
+  "start_url": "/zero7barber/",
+  "display": "standalone",
+  "background_color": "#16171A",
+  "theme_color": "#B5512C",
+  "icons": [
+    {
+      "src": "/zero7barber/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/zero7barber/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
