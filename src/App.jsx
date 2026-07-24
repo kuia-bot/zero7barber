@@ -191,6 +191,7 @@ setEnviando(false);
 
   const preco = calcularPreco(extras);
   const slotsList = slots();
+  try { await fetch('https://zero7barber-api.vercel.app/api/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: novo.nome, hora: novo.hora, data: fmtBR(novo.data), servico: novo.extras.length ? 'Corte + extras' : 'Corte de cabelo' }) }); } catch(e) { console.log('Notif erro:', e); }
 
   return (
     <div style={{maxWidth:640,margin:"0 auto",paddingBottom:60}}>
