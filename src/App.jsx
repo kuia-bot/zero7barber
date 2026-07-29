@@ -59,7 +59,7 @@ function gerarSlotsPadrao() {
 const SLOTS_PADRAO = gerarSlotsPadrao();
 
 const SLOTS_BLOQUEADOS_FIXOS = new Set(["12:00"]);
-function fmtISO(d) { return d.toISOString().slice(0,10); }
+function fmtISO(d) {
 function fmtBR(iso) { const [,m,d] = iso.split("-"); return `${d}/${m}`; }
 function nomeDia(d) { return ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][d.getDay()]; }
 function diaFechado(d) { return d.getDay() === 0; }
